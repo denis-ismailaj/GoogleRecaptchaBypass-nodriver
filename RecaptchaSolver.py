@@ -5,7 +5,7 @@ import pydub
 import speech_recognition
 import time
 from typing import Optional
-from DrissionPage import ChromiumPage
+from nodriver.core.tab import Tab
 
 
 class RecaptchaSolver:
@@ -17,60 +17,57 @@ class RecaptchaSolver:
     TIMEOUT_SHORT = 1
     TIMEOUT_DETECTION = 0.05
 
-    def __init__(self, driver: ChromiumPage) -> None:
-        """Initialize the solver with a ChromiumPage driver.
+    def __init__(self, tab: Tab) -> None:
+        """Initialize the solver with a nodriver Tab.
 
         Args:
-            driver: ChromiumPage instance for browser interaction
+            tab: A nodriver Tab instance for browser interaction
         """
-        self.driver = driver
+        self.tab = tab
 
-    def solveCaptcha(self) -> None:
+    async def solveCaptcha(self) -> None:
         """Attempt to solve the reCAPTCHA challenge.
 
         Raises:
             Exception: If captcha solving fails or bot is detected
         """
-        
-        # Handle main reCAPTCHA iframe
-        self.driver.wait.ele_displayed(
-            "@title=reCAPTCHA", timeout=self.TIMEOUT_STANDARD
-        )
-        time.sleep(0.1)
-        iframe_inner = self.driver("@title=reCAPTCHA")
+
+        # Find main reCAPTCHA iframe
+        iframe_inner = await self.tab.select("[title='reCAPTCHA']", self.TIMEOUT_STANDARD)
 
         # Click the checkbox
-        iframe_inner.wait.ele_displayed(
-            ".rc-anchor-content", timeout=self.TIMEOUT_STANDARD
-        )
-        iframe_inner(".rc-anchor-content", timeout=self.TIMEOUT_SHORT).click()
+        checkbox = await iframe_inner.select(".rc-anchor-content", self.TIMEOUT_STANDARD)
+        await checkbox.click()
 
         # Check if solved by just clicking
-        if self.is_solved():
+        if await self.is_solved():
             return
 
         # Handle audio challenge
-        iframe = self.driver("xpath://iframe[contains(@title, 'recaptcha')]")
-        iframe.wait.ele_displayed(
-            "#recaptcha-audio-button", timeout=self.TIMEOUT_STANDARD
-        )
-        iframe("#recaptcha-audio-button", timeout=self.TIMEOUT_SHORT).click()
+        iframe = (await self.tab.xpath("//iframe[contains(@title, 'recaptcha')]"))[0]
+
+        audio_btn = await iframe.select("#recaptcha-audio-button", self.TIMEOUT_STANDARD)
+        await audio_btn.click()
         time.sleep(0.3)
 
-        if self.is_detected():
+        if await self.is_detected():
             raise Exception("Captcha detected bot behavior")
 
         # Download and process audio
-        iframe.wait.ele_displayed("#audio-source", timeout=self.TIMEOUT_STANDARD)
-        src = iframe("#audio-source").attrs["src"]
+        audio_source = await (iframe.select("#audio-source", self.TIMEOUT_STANDARD))
+        src = audio_source.attrs["src"]
 
         try:
             text_response = self._process_audio_challenge(src)
-            iframe("#audio-response").input(text_response.lower())
-            iframe("#recaptcha-verify-button").click()
+
+            response_input = await iframe.query_selector("#audio-response")
+            await response_input.send_keys(text_response.lower())
+
+            verify_btn = await iframe.query_selector("#recaptcha-verify-button")
+            await verify_btn.click()
             time.sleep(0.4)
 
-            if not self.is_solved():
+            if not await self.is_solved():
                 raise Exception("Failed to solve the captcha")
 
         except Exception as e:
@@ -107,32 +104,26 @@ class RecaptchaSolver:
                     except OSError:
                         pass
 
-    def is_solved(self) -> bool:
+    async def is_solved(self) -> bool:
         """Check if the captcha has been solved successfully."""
         try:
-            return (
-                "style"
-                in self.driver.ele(
-                    ".recaptcha-checkbox-checkmark", timeout=self.TIMEOUT_SHORT
-                ).attrs
-            )
-        except Exception:
+            checkmark = (await self.tab.select_all(".recaptcha-checkbox-checkmark", self.TIMEOUT_SHORT, include_frames=True))[0]
+            return "style" in checkmark.attrs
+        except Exception as e:
+            print(e)
             return False
 
-    def is_detected(self) -> bool:
+    async def is_detected(self) -> bool:
         """Check if the bot has been detected."""
         try:
-            return (
-                self.driver.ele("Try again later", timeout=self.TIMEOUT_DETECTION)
-                .states()
-                .is_displayed
-            )
+            return await self.tab.find("Try again later", timeout=self.TIMEOUT_DETECTION) is not None
         except Exception:
             return False
 
-    def get_token(self) -> Optional[str]:
+    async def get_token(self) -> Optional[str]:
         """Get the reCAPTCHA token if available."""
         try:
-            return self.driver.ele("#recaptcha-token").attrs["value"]
+            token_el = (await self.tab.select_all("#recaptcha-token", include_frames=True))[0]
+            return token_el.attrs["value"]
         except Exception:
             return None

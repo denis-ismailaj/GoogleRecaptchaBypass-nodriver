@@ -1,17 +1,32 @@
-from DrissionPage import ChromiumPage 
+import asyncio
+
+from nodriver.core.config import Config
+import nodriver as uc
+
 from RecaptchaSolver import RecaptchaSolver
 import time
 
- 
-driver = ChromiumPage()
-recaptchaSolver = RecaptchaSolver(driver)
 
-driver.get("https://www.google.com/recaptcha/api2/demo")
+async def main():
+    config = Config(
+        # necessary to be able to access recaptcha iframe contents
+        browser_args=["--disable-site-isolation-trials"]
+    )
+    driver = await uc.start(config)
 
-t0 = time.time()
-recaptchaSolver.solveCaptcha()
-print(f"Time to solve the captcha: {time.time()-t0:.2f} seconds")
+    tab = await driver.get("https://www.google.com/recaptcha/api2/demo")
 
-driver.ele("#recaptcha-demo-submit").click()
+    recaptcha_solver = RecaptchaSolver(tab)
 
-driver.close()
+    t0 = time.time()
+    await recaptcha_solver.solveCaptcha()
+    print(f"Time to solve the captcha: {time.time() - t0:.2f} seconds")
+
+    submit_btn = await tab.query_selector("#recaptcha-demo-submit")
+    await submit_btn.click()
+
+    await tab.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
