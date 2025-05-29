@@ -1,0 +1,17 @@
+[project]
+name = "googlerecaptchabypass-nodriver"
+version = "0.1.0"
+description = "A fork of sarperavci/GooogleRecaptchaBypass that uses ultrafunkamsterdam/nodriver"
+
+dependencies = [
+    "pydub",
+    "SpeechRecognition",
+    "nodriver @ git+https://github.com/denis-ismailaj/nodriver@fad2c4e"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["RecaptchaSolver"]

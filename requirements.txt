@@ -1,3 +1,0 @@
-git+https://github.com/denis-ismailaj/nodriver@fad2c4e
-pydub
-SpeechRecognition
