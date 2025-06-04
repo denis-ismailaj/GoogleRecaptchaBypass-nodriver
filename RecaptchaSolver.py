@@ -1,11 +1,13 @@
 import os
-import urllib.request
 import random
+import time
+import urllib.request
+from typing import Optional
+
 import pydub
 import speech_recognition
-import time
-from typing import Optional
 from nodriver.core.tab import Tab
+from speech_recognition import UnknownValueError
 
 
 class RecaptchaSolver:
@@ -51,27 +53,35 @@ class RecaptchaSolver:
         time.sleep(0.3)
 
         if await self.is_detected():
-            raise Exception("Captcha detected bot behavior")
+            raise BotBehaviorDetectedException("CAPTCHA detected bot behavior")
 
-        # Download and process audio
-        audio_source = await (iframe.select("#audio-source", self.TIMEOUT_STANDARD))
-        src = audio_source.attrs["src"]
+        while True:
+            try:
+                # Download and process audio
+                audio_source = await (iframe.select("#audio-source", self.TIMEOUT_STANDARD))
+                src = audio_source.attrs["src"]
 
-        try:
-            text_response = self._process_audio_challenge(src)
+                text_response = self._process_audio_challenge(src)
 
-            response_input = await iframe.query_selector("#audio-response")
-            await response_input.send_keys(text_response.lower())
+                response_input = await iframe.query_selector("#audio-response")
+                await response_input.send_keys(text_response.lower())
 
-            verify_btn = await iframe.query_selector("#recaptcha-verify-button")
-            await verify_btn.click()
-            time.sleep(0.4)
+                verify_btn = await iframe.query_selector("#recaptcha-verify-button")
+                await verify_btn.click()
+                time.sleep(0.4)
 
-            if not await self.is_solved():
-                raise Exception("Failed to solve the captcha")
+                # multiple solutions required
+                if await self.tab.find("please solve more", timeout=self.TIMEOUT_SHORT) is not None:
+                    continue
 
-        except Exception as e:
-            raise Exception(f"Audio challenge failed: {str(e)}")
+                break
+            except UnknownValueError:
+                # Could not recognize audio. Refreshing challenge and trying again.
+                reload_btn = await (iframe.select("#recaptcha-reload-button", self.TIMEOUT_STANDARD))
+                await reload_btn.click()
+
+        if not await self.is_solved():
+            raise Exception("Failed to solve the captcha")
 
     def _process_audio_challenge(self, audio_url: str) -> str:
         """Process the audio challenge and return the recognized text.
@@ -82,8 +92,8 @@ class RecaptchaSolver:
         Returns:
             str: Recognized text from the audio file
         """
-        mp3_path = os.path.join(self.TEMP_DIR, f"{random.randrange(1,1000)}.mp3")
-        wav_path = os.path.join(self.TEMP_DIR, f"{random.randrange(1,1000)}.wav")
+        mp3_path = os.path.join(self.TEMP_DIR, f"{random.randrange(1, 1000)}.mp3")
+        wav_path = os.path.join(self.TEMP_DIR, f"{random.randrange(1, 1000)}.wav")
 
         try:
             urllib.request.urlretrieve(audio_url, mp3_path)
@@ -127,3 +137,7 @@ class RecaptchaSolver:
             return token_el.attrs["value"]
         except Exception:
             return None
+
+
+class BotBehaviorDetectedException(Exception):
+    pass
